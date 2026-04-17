@@ -2,25 +2,20 @@ import streamlit as st
 import dateparser
 from ics import Calendar, Event
 from github import Github
-import os
+from datetime import datetime
 
 # --- APP CONFIG ---
 st.set_page_config(page_title="Shift Logger", page_icon="📅")
 st.title("🎙️ Voice Shift Logger")
 
-# 1. Load your secret keys from Streamlit Settings
 try:
     GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
     REPO_NAME = st.secrets["REPO_NAME"]
-    
-    # This is your "Secret" filename for privacy
     FILE_PATH = "shift_data_secret_7x9z2.ics" 
-    
 except Exception:
-    st.error("Missing Secrets! Go to Streamlit Settings > Secrets and add GITHUB_TOKEN and REPO_NAME.")
+    st.error("Missing Secrets in Streamlit Settings!")
     st.stop()
 
-# 2. Connect to GitHub
 g = Github(GITHUB_TOKEN)
 repo = g.get_repo(REPO_NAME)
 
@@ -29,7 +24,6 @@ def get_calendar_from_github():
         file_content = repo.get_contents(FILE_PATH)
         return Calendar(file_content.decoded_content.decode()), file_content.sha
     except:
-        # If the file doesn't exist yet, start a fresh calendar
         return Calendar(), None
 
 def push_to_github(calendar, sha):
@@ -39,29 +33,63 @@ def push_to_github(calendar, sha):
     else:
         repo.create_file(FILE_PATH, "Initial shift commit", content)
 
-# --- USER INTERFACE ---
-st.write("Tap the box and use your keyboard's **Voice Mic** to log a shift.")
-voice_input = st.text_input("Example: 'Next Friday at 2pm'", key="input")
+# --- SMART PARSER ---
+def parse_shift_text(text):
+    text = text.lower()
+    start_dt, end_dt = None, None
+    
+    # Check if user said "to" or "-" (e.g., "8am to 4pm")
+    if " to " in text:
+        parts = text.split(" to ")
+    elif "-" in text:
+        parts = text.split("-")
+    else:
+        # Single time mentioned
+        return dateparser.parse(text), None
 
-if st.button("Add to Calendar"):
+    start_str = parts[0].replace("from", "").strip()
+    end_str = parts[1].strip()
+
+    start_dt = dateparser.parse(start_str)
+    end_dt = dateparser.parse(end_str, settings={'RELATIVE_BASE': start_dt}) if start_dt else dateparser.parse(end_str)
+
+    # If end_dt is before start_dt (e.g., 11pm to 7am), it's likely the next day
+    if start_dt and end_dt and end_dt < start_dt:
+        from datetime import timedelta
+        end_dt += timedelta(days=1)
+
+    return start_dt, end_dt
+
+# --- USER INTERFACE ---
+voice_input = st.text_input("Speak/Type your shift:", placeholder="e.g. Today 2:15pm to 7:30pm", key="input")
+
+if st.button("🚀 Add Shift"):
     if voice_input:
-        with st.spinner("Saving to GitHub..."):
-            dt = dateparser.parse(voice_input)
-            if dt:
+        with st.spinner("Processing..."):
+            start, end = parse_shift_text(voice_input)
+            
+            if start:
                 cal, sha = get_calendar_from_github()
-                event = Event(name="Work Shift", begin=dt)
+                event = Event(name="Work Shift", begin=start)
+                if end:
+                    event.end = end
+                
                 cal.events.add(event)
                 push_to_github(cal, sha)
-                st.success(f"✅ Saved! Shift added for {dt.strftime('%A, %b %d at %I:%M %p')}")
+                
+                success_msg = f"✅ Added: {start.strftime('%b %d, %I:%M %p')}"
+                if end:
+                    success_msg += f" to {end.strftime('%I:%M %p')}"
+                st.success(success_msg)
             else:
-                st.error("I didn't catch that date. Try saying something like 'Monday 8am'.")
+                st.error("Could not understand the time. Try 'Monday 8am to 4pm'.")
 
 # --- SYNC SECTION ---
 st.divider()
-st.subheader("🔗 Calendar Sync Link")
-st.write("Copy this link and paste it into Google Calendar (Add by URL) or Outlook (Subscribe from Web):")
+st.subheader("🔗 Outlook/Google Sync Link")
+st.info("Copy the URL below. In Outlook, go to 'Add Calendar' -> 'Subscribe from Web' and paste it.")
 
+# GENERATE THE CORRECT LINK
+# Note: Ensure your GitHub Repo is PUBLIC for this link to work in Outlook!
 raw_url = f"https://raw.githubusercontent.com/{REPO_NAME}/main/{FILE_PATH}"
 st.code(raw_url)
-
-st.info("💡 Reminder: Make sure your GitHub Repository is set to 'Public' so your calendar app can read this file.")
