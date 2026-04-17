@@ -2,3 +2,5 @@ streamlit
 ics
 dateparser
 PyGithub
+streamlit-calendar
+pandas
