@@ -13,8 +13,7 @@ try:
     GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
     REPO_NAME = st.secrets["REPO_NAME"]
     
-    # PRIVACY TIP: I changed this filename to something unique. 
-    # Only someone with this exact name can find your calendar file.
+    # This is your "Secret" filename for privacy
     FILE_PATH = "shift_data_secret_7x9z2.ics" 
     
 except Exception:
@@ -62,7 +61,6 @@ st.divider()
 st.subheader("🔗 Calendar Sync Link")
 st.write("Copy this link and paste it into Google Calendar (Add by URL) or Outlook (Subscribe from Web):")
 
-# This generates the link Google/Outlook needs to "read" your shifts
 raw_url = f"https://raw.githubusercontent.com/{REPO_NAME}/main/{FILE_PATH}"
 st.code(raw_url)
 
