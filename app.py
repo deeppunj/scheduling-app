@@ -42,3 +42,11 @@ st.subheader("🔗 Sync Link")
 st.info("Copy this URL into Google/Outlook Calendar settings:")
 # This will be your app's URL + /raw
 st.code("https://your-app-name.streamlit.app/raw")
+
+with open(ICS_FILE, "rb") as f:
+    st.download_button(
+        label="Download Calendar File",
+        data=f,
+        file_name="my_shifts.ics",
+        mime="text/calendar"
+    )
