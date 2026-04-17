@@ -4,3 +4,4 @@ dateparser
 PyGithub
 streamlit-calendar
 pandas
+pytz
