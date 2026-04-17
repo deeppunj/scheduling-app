@@ -1,3 +1,4 @@
-streamlit==1.56.0
-ics==0.7.3
-dateparser==1.4.0
+streamlit==1.32.0
+ics==0.7.2
+dateparser==1.2.0
+PyGithub==2.2.0
