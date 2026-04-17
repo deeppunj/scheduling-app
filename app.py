@@ -1,52 +1,66 @@
 import streamlit as st
 import dateparser
 from ics import Calendar, Event
-from datetime import datetime
+from github import Github
 import os
 
+# --- APP CONFIG ---
 st.set_page_config(page_title="Shift Logger", page_icon="📅")
 st.title("🎙️ Voice Shift Logger")
 
-# File to store the calendar
-ICS_FILE = "my_shifts.ics"
+# Load secrets
+try:
+    GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+    REPO_NAME = st.secrets["REPO_NAME"]
+    FILE_PATH = "my_shifts.ics"
+except Exception:
+    st.error("Please set up GITHUB_TOKEN and REPO_NAME in Streamlit Secrets!")
+    st.stop()
 
-def get_calendar():
-    if os.path.exists(ICS_FILE):
-        with open(ICS_FILE, "r") as f:
-            return Calendar(f.read())
-    return Calendar()
+g = Github(GITHUB_TOKEN)
+repo = g.get_repo(REPO_NAME)
 
-def save_calendar(cal):
-    with open(ICS_FILE, "w") as f:
-        f.writelines(cal.serialize_iter())
+def get_calendar_from_github():
+    try:
+        file_content = repo.get_contents(FILE_PATH)
+        return Calendar(file_content.decoded_content.decode()), file_content.sha
+    except:
+        return Calendar(), None
 
-# UI Input
-st.write("Tap the box below and use your keyboard's **Voice Mic** to say your shift.")
-voice_input = st.text_input("Example: 'Next Wednesday at 2pm'", key="input")
+def push_to_github(calendar, sha):
+    content = "".join(calendar.serialize_iter())
+    if sha:
+        repo.update_file(FILE_PATH, "Update shifts", content, sha)
+    else:
+        repo.create_file(FILE_PATH, "Initial shift commit", content)
+
+# --- UI ---
+st.write("Tap the box and use your keyboard's **Voice Mic**.")
+voice_input = st.text_input("Example: 'Morning shift tomorrow at 8am'", key="input")
 
 if st.button("Add to Calendar"):
     if voice_input:
-        dt = dateparser.parse(voice_input)
-        if dt:
-            cal = get_calendar()
-            event = Event(name="Work Shift", begin=dt)
-            cal.events.add(event)
-            save_calendar(cal)
-            st.success(f"Added: {dt.strftime('%A, %b %d at %I:%M %p')}")
-        else:
-            st.error("Could not understand that date. Try being more specific!")
+        with st.spinner("Syncing with GitHub..."):
+            dt = dateparser.parse(voice_input)
+            if dt:
+                cal, sha = get_calendar_from_github()
+                event = Event(name="Work Shift", begin=dt)
+                cal.events.add(event)
+                push_to_github(cal, sha)
+                st.success(f"✅ Added: {dt.strftime('%A, %b %d at %I:%M %p')}")
+            else:
+                st.error("Couldn't understand the date. Try 'Monday 8am'.")
 
-# Provide the public link for Syncing
+# --- SYNC INSTRUCTIONS ---
 st.divider()
-st.subheader("🔗 Sync Link")
-st.info("Copy this URL into Google/Outlook Calendar settings:")
-# This will be your app's URL + /raw
-st.code("https://your-app-name.streamlit.app/raw")
+st.subheader("🔗 How to Sync to Google/Outlook")
+st.write("To make the calendar update automatically, use the **Raw** URL from GitHub.")
 
-with open(ICS_FILE, "rb") as f:
-    st.download_button(
-        label="Download Calendar File",
-        data=f,
-        file_name="my_shifts.ics",
-        mime="text/calendar"
-    )
+# Generate the Raw URL (Note: Private repos require a token in the URL for external apps)
+# For simplicity, if you make the REPO 'Public', this link works instantly:
+raw_url = f"https://raw.githubusercontent.com/{REPO_NAME}/main/{FILE_PATH}"
+st.info("Copy this link into your Calendar settings:")
+st.code(raw_url)
+
+st.warning("⚠️ **Note:** If your repo is Private, Google/Outlook cannot see this link. "
+           "For the easiest sync, set your GitHub Repository to **Public** in the repo settings.")
