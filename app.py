@@ -83,10 +83,58 @@ with col_left:
     st.subheader("➕ Add Shift")
     
     # Text/Voice Entry
-    voice_input = st.text_input("Voice/Text Entry:", placeholder="e.g. 'Monday 8am to 4pm'")
+    voice_input = st.text_input("Voice/Text Entry:", placeholder="e.g. 'Monday 06:00 to 11:15' or 'Tomorrow 9am to 14:15'")
+    
     if st.button("Add via Text", use_container_width=True):
-        st.info("Processing...")
-        # (Implicit parsing logic used here)
+        if not voice_input.strip():
+            st.warning("Please enter some text first!")
+        else:
+            with st.spinner("Parsing and saving shift..."):
+                try:
+                    # Normalize common separators
+                    cleaned_input = voice_input.lower().replace(" to ", " ").replace("-", " ")
+                    words = cleaned_input.split()
+                    
+                    if len(words) < 3:
+                        st.error("Could not parse. Try format: '[Day/Date] [Start Time] [End Time]'")
+                    else:
+                        # Split text components assuming the final two words are the times
+                        time_end_str = words[-1]
+                        time_start_str = words[-2]
+                        date_str = " ".join(words[:-2])
+                        
+                        # Parse relative dates in context of Europe/Brussels current local time
+                        base_date = dateparser.parse(
+                            date_str, 
+                            settings={'PREFER_DATES_FROM': 'future', 'RELATIVE_BASE': datetime.now(BELGIUM_TZ).replace(tzinfo=None)}
+                        )
+                        
+                        start_time_obj = dateparser.parse(time_start_str)
+                        end_time_obj = dateparser.parse(time_end_str)
+                        
+                        if not base_date or not start_time_obj or not end_time_obj:
+                            st.error("Failed to recognize date or times. Example: 'Next Monday 6:00 11:15'")
+                        else:
+                            # Combine parsed date context with individual times
+                            start_dt = datetime.combine(base_date.date(), start_time_obj.time())
+                            end_dt = datetime.combine(base_date.date(), end_time_obj.time())
+                            
+                            start_dt_loc = BELGIUM_TZ.localize(start_dt)
+                            end_dt_loc = BELGIUM_TZ.localize(end_dt)
+                            
+                            # Handle shift wraps over midnight
+                            if end_dt_loc <= start_dt_loc:
+                                end_dt_loc += timedelta(days=1)
+                                
+                            new_event = Event(name="Work Shift", begin=start_dt_loc, end=end_dt_loc)
+                            cal_obj.events.add(new_event)
+                            
+                            push_to_github(cal_obj, current_sha, f"Added shift via text: {voice_input}")
+                            st.toast(f"Logged: {start_dt_loc.strftime('%A %d/%m')} ({start_dt_loc.strftime('%H:%M')} - {end_dt_loc.strftime('%H:%M')})", icon="✅")
+                            st.rerun()
+                            
+                except Exception as parser_err:
+                    st.error("Error processing text. Ensure format matches: 'Monday 06:00 11:15'")
     
     st.divider()
     
@@ -94,14 +142,12 @@ with col_left:
     st.subheader("🖱️ Quick Select")
     
     if st.session_state.last_clicked_date:
-        # Style the selection box to be clear
         st.success(f"Selected Date: **{st.session_state.last_clicked_date}**")
         
         cols = st.columns(2)
         for i, shift in enumerate(PRESET_SHIFTS):
             if cols[i % 2].button(shift["label"], use_container_width=True, key=f"btn_{i}"):
                 with st.spinner("Saving..."):
-                    # Create datetime objects
                     start_dt = BELGIUM_TZ.localize(datetime.strptime(f"{st.session_state.last_clicked_date} {shift['start']}", "%Y-%m-%d %H:%M"))
                     end_dt = BELGIUM_TZ.localize(datetime.strptime(f"{st.session_state.last_clicked_date} {shift['end']}", "%Y-%m-%d %H:%M"))
                     
@@ -147,12 +193,12 @@ with col_right:
         key="calendar"
     )
     
-    # Catch the date click WITHOUT a manual rerun loop
+    # Catch the date click without establishing loop triggers
     if cal_output.get("callback") == "dateClick":
         new_date = cal_output["dateClick"]["date"].split("T")[0]
         if st.session_state.last_clicked_date != new_date:
             st.session_state.last_clicked_date = new_date
-            st.rerun() # Only rerun if the date actually changed
+            st.rerun()
 
     # 3. Compact Manage List
     st.subheader("📋 Compact List")
@@ -161,13 +207,11 @@ with col_right:
     if not sorted_events:
         st.caption("No shifts logged.")
     else:
-        # Use a small scrollable area to keep the screen tidy
         with st.expander("Show/Hide All Shifts", expanded=True):
             for i, e in enumerate(sorted_events):
                 b_start = e.begin.datetime.astimezone(BELGIUM_TZ)
                 b_end = e.end.datetime.astimezone(BELGIUM_TZ)
                 
-                # ultra-compact row
                 c1, c2, c3 = st.columns([0.4, 0.4, 0.2])
                 c1.markdown(f"**{b_start.strftime('%d/%m')}**")
                 c2.text(f"{b_start.strftime('%H:%M')}-{b_end.strftime('%H:%M')}")
