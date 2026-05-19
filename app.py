@@ -11,13 +11,21 @@ from datetime import datetime, timedelta
 BELGIUM_TZ = pytz.timezone("Europe/Brussels")
 st.set_page_config(page_title="Belgium Shift Manager", page_icon="📅", layout="wide")
 
-# Pre-defined Shifts
-PRESET_SHIFTS = [
-    {"label": "(1) 06:00 - 11:15", "start": "06:00", "end": "11:15"},
-    {"label": "(2) 09:00 - 14:15", "start": "09:00", "end": "14:15"},
-    {"label": "(3) 14:15 - 19:30", "start": "14:15", "end": "19:30"},
-    {"label": "(4) 14:45 - 20:00", "start": "14:45", "end": "20:00"},
+# Raw Pre-defined Shifts (Mixing formats; handled gracefully below)
+RAW_SHIFTS = [
+    {"label": "(1) 06:00 - 11:15", "start": "06:00", "end": "11:15", "is_off": False},
+    {"label": "(2) 09:00 - 14:15", "start": "09:00", "end": "14:15", "is_off": False},
+    {"label": "(3) 14:15 - 19:30", "start": "14:15", "end": "19:30", "is_off": False},
+    {"label": "(4) 14:45 - 20:00", "start": "14:45", "end": "20:00", "is_off": False},
+    {"label": "10:00am - 3:15pm", "start": "10:00", "end": "15:15", "is_off": False},
+    {"label": "7:00am - 12:15pm", "start": "07:00", "end": "12:15", "is_off": False},
+    {"label": "🌴 Off", "start": "00:00", "end": "00:00", "is_off": True}
 ]
+
+# Separate "Off" from active shifts, sort active shifts by start time, and recombine
+active_shifts = sorted([s for s in RAW_SHIFTS if not s["is_off"]], key=lambda x: x["start"])
+off_shift = [s for s in RAW_SHIFTS if s["is_off"]]
+PRESET_SHIFTS = active_shifts + off_shift
 
 # Initialize session state for date selection if it doesn't exist
 if "last_clicked_date" not in st.session_state:
@@ -67,7 +75,7 @@ def delete_event(event_start_time):
         if e.begin != event_start_time:
             new_events.add(e)
     cal.events = new_events
-    push_to_github(cal, sha, "Deleted a shift")
+    push_to_github(cal, sha, "Deleted an entry")
     st.rerun()
 
 # --- APP LAYOUT ---
@@ -91,19 +99,16 @@ with col_left:
         else:
             with st.spinner("Parsing and saving shift..."):
                 try:
-                    # Normalize common separators
                     cleaned_input = voice_input.lower().replace(" to ", " ").replace("-", " ")
                     words = cleaned_input.split()
                     
                     if len(words) < 3:
                         st.error("Could not parse. Try format: '[Day/Date] [Start Time] [End Time]'")
                     else:
-                        # Split text components assuming the final two words are the times
                         time_end_str = words[-1]
                         time_start_str = words[-2]
                         date_str = " ".join(words[:-2])
                         
-                        # Parse relative dates in context of Europe/Brussels current local time
                         base_date = dateparser.parse(
                             date_str, 
                             settings={'PREFER_DATES_FROM': 'future', 'RELATIVE_BASE': datetime.now(BELGIUM_TZ).replace(tzinfo=None)}
@@ -115,14 +120,12 @@ with col_left:
                         if not base_date or not start_time_obj or not end_time_obj:
                             st.error("Failed to recognize date or times. Example: 'Next Monday 6:00 11:15'")
                         else:
-                            # Combine parsed date context with individual times
                             start_dt = datetime.combine(base_date.date(), start_time_obj.time())
                             end_dt = datetime.combine(base_date.date(), end_time_obj.time())
                             
                             start_dt_loc = BELGIUM_TZ.localize(start_dt)
                             end_dt_loc = BELGIUM_TZ.localize(end_dt)
                             
-                            # Handle shift wraps over midnight
                             if end_dt_loc <= start_dt_loc:
                                 end_dt_loc += timedelta(days=1)
                                 
@@ -148,13 +151,21 @@ with col_left:
         for i, shift in enumerate(PRESET_SHIFTS):
             if cols[i % 2].button(shift["label"], use_container_width=True, key=f"btn_{i}"):
                 with st.spinner("Saving..."):
-                    start_dt = BELGIUM_TZ.localize(datetime.strptime(f"{st.session_state.last_clicked_date} {shift['start']}", "%Y-%m-%d %H:%M"))
-                    end_dt = BELGIUM_TZ.localize(datetime.strptime(f"{st.session_state.last_clicked_date} {shift['end']}", "%Y-%m-%d %H:%M"))
+                    if shift["is_off"]:
+                        # Treat "Off" as an all-day block or clear marker entry
+                        start_dt = BELGIUM_TZ.localize(datetime.strptime(f"{st.session_state.last_clicked_date} 00:00", "%Y-%m-%d %H:%M"))
+                        end_dt = BELGIUM_TZ.localize(datetime.strptime(f"{st.session_state.last_clicked_date} 23:59", "%Y-%m-%d %H:%M"))
+                        new_event = Event(name="Off Day", begin=start_dt, end=end_dt)
+                        msg = f"Marked {st.session_state.last_clicked_date} as Off Day"
+                    else:
+                        start_dt = BELGIUM_TZ.localize(datetime.strptime(f"{st.session_state.last_clicked_date} {shift['start']}", "%Y-%m-%d %H:%M"))
+                        end_dt = BELGIUM_TZ.localize(datetime.strptime(f"{st.session_state.last_clicked_date} {shift['end']}", "%Y-%m-%d %H:%M"))
+                        new_event = Event(name="Work Shift", begin=start_dt, end=end_dt)
+                        msg = f"Added preset {shift['label']}"
                     
-                    new_event = Event(name="Work Shift", begin=start_dt, end=end_dt)
                     cal_obj.events.add(new_event)
-                    push_to_github(cal_obj, current_sha, f"Added preset {shift['label']}")
-                    st.toast(f"Shift {shift['label']} added!", icon="✅")
+                    push_to_github(cal_obj, current_sha, msg)
+                    st.toast(f"Logged: {shift['label']}", icon="✅")
                     st.rerun()
                     
         if st.button("Cancel Selection", type="secondary", use_container_width=True):
@@ -174,11 +185,17 @@ with col_right:
     for e in cal_obj.events:
         b_start = e.begin.datetime.astimezone(BELGIUM_TZ)
         b_end = e.end.datetime.astimezone(BELGIUM_TZ)
+        
+        # Color coding: Gray out off days, leave active shifts blue
+        is_off_day = (e.name == "Off Day")
+        event_color = "#A0A0A0" if is_off_day else "#3D9DF3"
+        display_title = "🌴 Off" if is_off_day else f"{b_start.strftime('%H:%M')}"
+        
         calendar_events.append({
-            "title": f"{b_start.strftime('%H:%M')}",
+            "title": display_title,
             "start": b_start.isoformat(),
             "end": b_end.isoformat(),
-            "color": "#3D9DF3"
+            "color": event_color
         })
 
     # 2. Display Calendar
@@ -193,7 +210,6 @@ with col_right:
         key="calendar"
     )
     
-    # Catch the date click without establishing loop triggers
     if cal_output.get("callback") == "dateClick":
         new_date = cal_output["dateClick"]["date"].split("T")[0]
         if st.session_state.last_clicked_date != new_date:
@@ -205,16 +221,21 @@ with col_right:
     sorted_events = sorted(cal_obj.events, key=lambda x: x.begin, reverse=True)
     
     if not sorted_events:
-        st.caption("No shifts logged.")
+        st.caption("No entries logged.")
     else:
-        with st.expander("Show/Hide All Shifts", expanded=True):
+        with st.expander("Show/Hide All Entries", expanded=True):
             for i, e in enumerate(sorted_events):
                 b_start = e.begin.datetime.astimezone(BELGIUM_TZ)
                 b_end = e.end.datetime.astimezone(BELGIUM_TZ)
                 
                 c1, c2, c3 = st.columns([0.4, 0.4, 0.2])
                 c1.markdown(f"**{b_start.strftime('%d/%m')}**")
-                c2.text(f"{b_start.strftime('%H:%M')}-{b_end.strftime('%H:%M')}")
+                
+                if e.name == "Off Day":
+                    c2.markdown("<span style='color:gray;'>🌴 Off Day</span>", unsafe_allow_html=True)
+                else:
+                    c2.text(f"{b_start.strftime('%H:%M')}-{b_end.strftime('%H:%M')}")
+                    
                 if c3.button("🗑️", key=f"del_{i}"):
                     delete_event(e.begin)
                 if i < len(sorted_events) - 1:
