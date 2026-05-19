@@ -13,10 +13,10 @@ st.set_page_config(page_title="Belgium Shift Manager", page_icon="📅", layout=
 
 # Raw Pre-defined Shifts (Mixing formats; handled gracefully below)
 RAW_SHIFTS = [
-    {"label": "06:00 - 11:15", "start": "06:00", "end": "11:15", "is_off": False},
-    {"label": "09:00 - 14:15", "start": "09:00", "end": "14:15", "is_off": False},
-    {"label": "14:15 - 19:30", "start": "14:15", "end": "19:30", "is_off": False},
-    {"label": "14:45 - 20:00", "start": "14:45", "end": "20:00", "is_off": False},
+    {"label": "(1) 06:00 - 11:15", "start": "06:00", "end": "11:15", "is_off": False},
+    {"label": "(2) 09:00 - 14:15", "start": "09:00", "end": "14:15", "is_off": False},
+    {"label": "(3) 14:15 - 19:30", "start": "14:15", "end": "19:30", "is_off": False},
+    {"label": "(4) 14:45 - 20:00", "start": "14:45", "end": "20:00", "is_off": False},
     {"label": "10:00am - 3:15pm", "start": "10:00", "end": "15:15", "is_off": False},
     {"label": "7:00am - 12:15pm", "start": "07:00", "end": "12:15", "is_off": False},
     {"label": "🌴 Off", "start": "00:00", "end": "00:00", "is_off": True}
@@ -152,7 +152,6 @@ with col_left:
             if cols[i % 2].button(shift["label"], use_container_width=True, key=f"btn_{i}"):
                 with st.spinner("Saving..."):
                     if shift["is_off"]:
-                        # Treat "Off" as an all-day block or clear marker entry
                         start_dt = BELGIUM_TZ.localize(datetime.strptime(f"{st.session_state.last_clicked_date} 00:00", "%Y-%m-%d %H:%M"))
                         end_dt = BELGIUM_TZ.localize(datetime.strptime(f"{st.session_state.last_clicked_date} 23:59", "%Y-%m-%d %H:%M"))
                         new_event = Event(name="Off Day", begin=start_dt, end=end_dt)
@@ -186,7 +185,6 @@ with col_right:
         b_start = e.begin.datetime.astimezone(BELGIUM_TZ)
         b_end = e.end.datetime.astimezone(BELGIUM_TZ)
         
-        # Color coding: Gray out off days, leave active shifts blue
         is_off_day = (e.name == "Off Day")
         event_color = "#A0A0A0" if is_off_day else "#3D9DF3"
         display_title = "🌴 Off" if is_off_day else f"{b_start.strftime('%H:%M')}"
@@ -198,14 +196,18 @@ with col_right:
             "color": event_color
         })
 
-    # 2. Display Calendar
+    # 2. Display Calendar (With Added Week View option)
     cal_output = calendar(
         events=calendar_events,
         options={
             "initialView": "dayGridMonth", 
             "selectable": True, 
             "timeZone": "Europe/Brussels",
-            "headerToolbar": {"left": "prev,next", "center": "title", "right": "dayGridMonth,timeGridDay"}
+            "headerToolbar": {
+                "left": "prev,next", 
+                "center": "title", 
+                "right": "dayGridMonth,timeGridWeek,timeGridDay"
+            }
         },
         key="calendar"
     )
