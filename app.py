@@ -23,16 +23,24 @@ PRESET_SHIFTS = [
 if "last_clicked_date" not in st.session_state:
     st.session_state.last_clicked_date = None
 
-try:
-    GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
-    REPO_NAME = st.secrets["REPO_NAME"]
-    FILE_PATH = "shift_data_secret_7x9z2.ics" 
-except Exception:
-    st.error("Missing Secrets! Add GITHUB_TOKEN and REPO_NAME in Streamlit Settings.")
+# --- CONFIGURATION & SAFELY FETCH SECRETS ---
+FILE_PATH = "shift_data_secret_7x9z2.ics" 
+
+if "GITHUB_TOKEN" not in st.secrets or "REPO_NAME" not in st.secrets:
+    st.error("🚨 **Missing Secrets!** Please add `GITHUB_TOKEN` and `REPO_NAME` to your Streamlit Cloud Advanced Settings.")
     st.stop()
 
-g = Github(GITHUB_TOKEN)
-repo = g.get_repo(REPO_NAME)
+GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+REPO_NAME = st.secrets["REPO_NAME"]
+
+# --- GITHUB SECURE AUTHENTICATION ---
+try:
+    g = Github(GITHUB_TOKEN)
+    repo = g.get_repo(REPO_NAME)
+except Exception as e:
+    st.error("❌ **GitHub Authentication Failed!** Your token might be expired, invalid, or missing `repo` scope access.")
+    st.info("💡 **Fix:** Check that your token matches your Streamlit Secrets exactly and hasn't been revoked by GitHub.")
+    st.stop()
 
 # --- GITHUB HELPERS ---
 @st.cache_data(ttl=60) # Cache for 1 minute to speed up the UI
@@ -40,7 +48,8 @@ def get_calendar_from_github():
     try:
         file_content = repo.get_contents(FILE_PATH)
         return Calendar(file_content.decoded_content.decode()), file_content.sha
-    except:
+    except Exception:
+        # Returns an empty calendar if the file doesn't exist yet
         return Calendar(), None
 
 def push_to_github(calendar, sha, message="Update shifts"):
@@ -126,7 +135,7 @@ with col_right:
             "color": "#3D9DF3"
         })
 
-    # 2. Display Calendar (The Source of the Rerun)
+    # 2. Display Calendar
     cal_output = calendar(
         events=calendar_events,
         options={
@@ -138,7 +147,7 @@ with col_right:
         key="calendar"
     )
     
-    # Catch the date click WITHOUT a manual rerun
+    # Catch the date click WITHOUT a manual rerun loop
     if cal_output.get("callback") == "dateClick":
         new_date = cal_output["dateClick"]["date"].split("T")[0]
         if st.session_state.last_clicked_date != new_date:
