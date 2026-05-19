@@ -13,10 +13,10 @@ st.set_page_config(page_title="Belgium Shift Manager", page_icon="📅", layout=
 
 # Raw Pre-defined Shifts (Mixing formats; handled gracefully below)
 RAW_SHIFTS = [
-    {"label": "(1) 06:00 - 11:15", "start": "06:00", "end": "11:15", "is_off": False},
-    {"label": "(2) 09:00 - 14:15", "start": "09:00", "end": "14:15", "is_off": False},
-    {"label": "(3) 14:15 - 19:30", "start": "14:15", "end": "19:30", "is_off": False},
-    {"label": "(4) 14:45 - 20:00", "start": "14:45", "end": "20:00", "is_off": False},
+    {"label": "06:00 - 11:15", "start": "06:00", "end": "11:15", "is_off": False},
+    {"label": "09:00 - 14:15", "start": "09:00", "end": "14:15", "is_off": False},
+    {"label": "14:15 - 19:30", "start": "14:15", "end": "19:30", "is_off": False},
+    {"label": "14:45 - 20:00", "start": "14:45", "end": "20:00", "is_off": False},
     {"label": "10:00am - 3:15pm", "start": "10:00", "end": "15:15", "is_off": False},
     {"label": "7:00am - 12:15pm", "start": "07:00", "end": "12:15", "is_off": False},
     {"label": "🌴 Off", "start": "00:00", "end": "00:00", "is_off": True}
